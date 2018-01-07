@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context=".livedata.LiveDataActivity">
+
+    <TextView
+        android:id="@+id/tv_username"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="40dp"
+        android:text="用户默认名字"
+        android:textSize="20dp" />
+
+    <Button
+        android:id="@+id/tv_change_username"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:onClick="onClickMainThread"
+        android:text="改变用户名字（主线程）"
+        tools:ignore="OnClick" />
+
+    <Button
+        android:id="@+id/tv_change_username_background"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:onClick="onClickThread"
+        tools:ignore="OnClick"
+        android:text="改变用户名字（子线程中）" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="10dp"
+        android:padding="10dp"
+        android:text="一个数据持有类，持有数据并且这个数据可以被观察被监听，和其他Observer不同的是，它和Lifecycle是绑定的。"
+        android:textColor="@color/colorPrimary"
+        android:textSize="17dp" />
+
+
+</LinearLayout>

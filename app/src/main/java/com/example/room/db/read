@@ -1,0 +1,238 @@
+
+项目场景
+想象我们有一个的项目是这样的：
+
+我们的数据库有 10 张表，分别对应一个 model 类。比如，对于 users 表，有一个相应的 User 类。
+一个继承自 SQLiteOpenHelper 的 CustomDbHelper。
+会在 LocalDataSource 类中通过 CustomDbHelper 进行访问数据库的操作。
+一些针对 LocalDataSource 的测试。
+First PR
+我们的第一个 PR 会包含启用 Room 最低限度的修改。
+
+实现 entity 类
+
+为每张表对应的 model 类增加 @Entity, @PrimaryKey 和 @ColumnInfo 注解。
+
++ @Entity(tableName = "users")
+  public class User {
+
+    + @PrimaryKey
+    + @ColumnInfo(name = "userid")
+      private int mId;
+
+    + @ColumnInfo(name = "username")
+      private String mUserName;
+
+      public User(int id, String userName) {
+          this.mId = id;
+          this.mUserName = userName;
+      }
+
+      public int getId() { return mId; }
+
+      public String getUserName() { return mUserName; }
+}
+创建 Room 数据库
+
+创建一个继承 RoomDatabase 的抽象类。在 @Database 注解中列出所有创建的 entity 类。再增加数据库版本号并实现一个 Migration：
+
+@Database(entities = {<all entity classes>}, 
+          version = <incremented_sqlite_version>)
+public abstract class AppDatabase extends RoomDatabase {
+    private static UsersDatabase INSTANCE;
+    static final Migration      MIGRATION_<sqlite_version>_<incremented_sqlite_version> 
+= new Migration(<sqlite_version>, <incremented_sqlite_version>) {
+         @Override public void migrate(
+                    SupportSQLiteDatabase database) {
+           // Since we didn’t alter the table, there’s nothing else 
+           // to do here.
+         }
+    };
+更新 SQLiteOpenHelper 为 SupportSQLiteOpenHelper
+
+起初，我们是在 LocalDataSource 中使用我们自己实现的 CustomOpenHelper。现在我们要改成使用
+ SupportSQLiteOpenHelper 了，SupportSQLiteOpenHelper 提供了更加简洁的 API。
+
+public class LocalUserDataSource {
+    private SupportSQLiteOpenHelper mDbHelper;
+
+    LocalUserDataSource(@NonNull SupportSQLiteOpenHelper helper) {
+       mDbHelper = helper;
+    }
+对于插入：
+
+@Override
+public void insertOrUpdateUser(User user) {
+    SupportSQLiteDatabase db = mDbHelper.getWritableDatabase();
+
+    ContentValues values = new ContentValues();
+    values.put(COLUMN_NAME_ENTRY_ID, user.getId());
+    values.put(COLUMN_NAME_USERNAME, user.getUserName());
+
+    - db.insertWithOnConflict(TABLE_NAME, null, values,
+    -        SQLiteDatabase.CONFLICT_REPLACE);
+    + db.insert(TABLE_NAME, SQLiteDatabase.CONFLICT_REPLACE, values);
+    db.close();
+}
+对于查询，SupportSQLiteDatabase 提供了四个方法：
+
+Cursor query(String query);
+Cursor query(String query, Object[] bindArgs);
+Cursor query(SupportSQLiteQuery query);
+Cursor query(SupportSQLiteQuery query, CancellationSignal cancellationSignal);
+如果原本的查询操作比较简单，那可以直接使用前两个方法。而如果比较复杂，那就建议通过
+ SupportSQLiteQueryBuilder 构造一个 SupportSQLiteQuery 来帮助查询。
+
+比如，我们想要获得 users 表中根据用户名排序的第一个用户，来看看 SQLiteDatabase 和 SupportSQLiteDatabase 两者间的实现区别：
+
+public User getFirstUserAlphabetically() {
+        User user = null;
+        SupportSQLiteDatabase db = mDbHelper.getReadableDatabase();
+        String[] projection = {
+                COLUMN_NAME_ENTRY_ID,
+                COLUMN_NAME_USERNAME
+        };
+    
+        // Get the first user from the table ordered alphabetically
+        - Cursor cursor = db.query(TABLE_NAME, projection, null,
+        -   null, null, null, COLUMN_NAME_USERNAME + “ ASC “, “1”);
+        
+        + SupportSQLiteQuery query =
+        +  SupportSQLiteQueryBuilder.builder(TABLE_NAME)
+        +                           .columns(projection)
+        +                           .orderBy(COLUMN_NAME_USERNAME)
+        +                           .limit(“1”)
+        +                           .create();
+        
+        + Cursor cursor = db.query(query);
+        
+        if (c !=null && c.getCount() > 0){
+            // read data from cursor
+              ...
+        }
+        if (c !=null){
+            cursor.close();
+        }
+        db.close();
+        return user;
+    }
+接下来的 PRs
+完成以上步骤我们的数据层实现就已经变为 Room 了，之后可以开始逐步创建 DAO（包括测试），
+并用 DAO 替换 Cursor 和 ContentValue 的代码。
+
+上面我们实现的从 users 表获得按用户名排序的第一个用户方法，应该被定义在 UserDao 接口中：
+
+@Dao
+public interface UserDao {
+   @Query(“SELECT * FROM Users ORDERED BY name ASC LIMIT 1”)
+    User getFirstUserAlphabetically();
+}
+并在 LocalDataSource 类中被使用：
+
+public class LocalDataSource {
+     private UserDao mUserDao;
+
+     public User getFirstUserAlphabetically() {
+        return mUserDao.getFirstUserAlphabetically();
+     }
+} 
+
+测试升级
+Migration并不是简单的数据库写入操作，一旦升级失败，会对App致命的Crash。为了保证应用的稳定性，
+应该事先测试Migration，Room提供了一套测试框架，下面我们来简单学习下。
+
+导出Schema文件
+Room需要将你数据库的Schema已Json格式的文件导出，为了导出Schema，需要在build.gradle中做如下配置：
+
+android {
+    ...
+    defaultConfig {
+        ...
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments = ["room.schemaLocation":
+                             "$projectDir/schemas".toString()]
+            }
+        }
+    }
+}
+你需要将导出的Json文件保存起来，以便Room通过schema文件创建老版数据库进行升级测试。
+
+为了进行升级测试，需要将android.arch.persistence.room:testing添加到你的测试依赖当中，然后添加如下配置：
+
+android {
+    ...
+    sourceSets {
+        androidTest.assets.srcDirs += files("$projectDir/schemas".toString())
+    }
+}
+测试框架提供了名为MigrationTestHelper的类，它可以读取schema文件，这也是一个遵循Junit4测试原则的类。具体测试代码如下：
+
+@RunWith(AndroidJUnit4.class)
+public class MigrationTest {
+    private static final String TEST_DB = "migration-test";
+
+    @Rule
+    public MigrationTestHelper helper;
+
+    public MigrationTest() {
+        helper = new MigrationTestHelper(InstrumentationRegistry.getContext(),
+                MigrationDb.class.getCanonicalName(),
+                new FrameworkSQLiteOpenHelperFactory());
+    }
+
+    @Test
+    public void migrate1To2() throws IOException {
+        SupportSQLiteDatabase db = helper.createDatabase(TEST_DB, 1);
+
+        // db has schema version 1. insert some data using SQL queries.
+        // You cannot use DAO classes because they expect the latest schema.
+        db.execSQL(...);
+
+        // Prepare for the next version.
+        db.close();
+
+        // Re-open the database with version 2 and provide
+        // MIGRATION_1_2 as the migration process.
+        db = helper.runMigrationsAndValidate(TEST_DB, 2, true, MIGRATION_1_2);
+
+        // MigrationTestHelper automatically verifies the schema changes,
+        // but you need to validate that the data was migrated properly.
+    }
+}
+
+测试数据库
+当你的应用程序运行测试时，如果你没有测试数据库本身，则不需要创建完整的数据库。Room允许你轻松地模拟测试中的数据访问层。
+这个过程是可能的，因为您的DAO不会泄露您的数据库的任何细节。测试其余的应用程序时，应该创建DAO类的模拟或假的实例。
+
+这里推荐在Android设备上编写JUnit测试，因为这些测试并不需要UI的支持，所以这些测试会比UI测试速度更快。
+
+测试代码如下：
+
+@RunWith(AndroidJUnit4.class)
+public class SimpleEntityReadWriteTest {
+    private UserDao mUserDao;
+    private TestDatabase mDb;
+
+    @Before
+    public void createDb() {
+        Context context = InstrumentationRegistry.getTargetContext();
+        //将数据库建在内存中，可以让你的测试整体更加一体化，更密闭。
+        mDb = Room.inMemoryDatabaseBuilder(context, TestDatabase.class).build();
+        mUserDao = mDb.getUserDao();
+    }
+
+    @After
+    public void closeDb() throws IOException {
+        mDb.close();
+    }
+
+    @Test
+    public void writeUserAndReadInList() throws Exception {
+        User user = TestUtil.createUser(3);
+        user.setName("george");
+        mUserDao.insert(user);
+        List<User> byName = mUserDao.findUsersByName("george");
+        assertThat(byName.get(0), equalTo(user));
+    }
+} 

@@ -51,8 +51,15 @@ public class User {
     //表示对象的嵌套 嵌入字段也包括其他嵌入字段
 //    如果一个字段有多个同一类型的嵌入字段，你能保持每个列是独一无二的通过
 //    设置prefix属性。Room然后将所提供的值添加到嵌入对象中每个列名的开头
+    //@Embedded来表示一个对象，将其分解为表中的子字段/然后可以像对其他单个列一样查询嵌入式字段
     @Embedded
     public Address address;
+
+    //如果一个实体具有相同类型的多个内嵌字段，则可以通过设置前缀属性(prefix)使每个列保持惟一。
+    // 然后将所提供的值添加到嵌入对象中每个列名的开头
+//    @Embedded(prefix = "foo_")
+//    Coordinates coordinates;
+
 
     private Date birthday;
 

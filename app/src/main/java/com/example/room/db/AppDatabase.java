@@ -20,7 +20,7 @@ import com.example.room.entity.User;
  */
 
 @Database(entities = {User.class}, version = 1)
-@TypeConverters({Converters.class})
+@TypeConverters({Converters.class}) //告知数据库要依赖哪些转换类
 public abstract class AppDatabase extends RoomDatabase {
 
 //    AppDatabase db = Room.databaseBuilder(getApplicationContext(),

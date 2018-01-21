@@ -51,6 +51,17 @@ public interface UserDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertUsers(User... users);
 
+    //策略冲突就替换旧数据
+    int REPLACE = 1;
+    //策略冲突就回滚事务
+    int ROLLBACK = 2;
+    //策略冲突就退出事务
+    int ABORT = 3;
+    //策略冲突就使事务失败
+    int FAIL = 4;
+    //忽略冲突
+    int IGNORE = 5;
+
     @Insert
     void insertBothUsers(User user1, User user2);
 
